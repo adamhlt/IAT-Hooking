@@ -6,4 +6,21 @@
 
 ## :open_book: Project Overview :
 
-This 
+This project have been created to show how IAT hooking works. 
+
+You can easily hook any functions in the IAT, you can also change the module you want to target.
+
+This project can be compiled for x86 and x64 architecture.
+
+## :rocket: Getting Started
+
+### Visual Studio :
+
+1. Open the solution file (.sln).
+2. Build the project in Release (x86 or x64)
+
+Build for x86 / x64 (Debug and Realese).
+
+## :test_tube: Demonstration
+
+#### MessageBoxA Hook
