@@ -21,6 +21,41 @@ This project can be compiled for x86 and x64 architecture.
 
 Build for x86 / x64 (Debug and Realese).
 
-## :test_tube: Demonstration
+## :test_tube: Example
 
 #### MessageBoxA Hook
+
+New MessageBoxA function.
+
+```cpp
+using MessageBoxPtr = int(WINAPI*)(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType);
+MessageBoxPtr MessageBoxTest;
+
+//MessageBoxA function hook.
+int WINAPI MessageBoxHook(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType)
+{
+	printf("MessageBoxA have been called !\n");
+
+  //Call the orginal MessageBoxA function
+	return MessageBoxTest(nullptr, "This function have been hooked !", "test", 0);
+}
+```
+
+Hook MessageBoxA.
+
+```cpp
+//Hook the MessageBoxA function
+const LPVOID lpOrgFunction = IATHook("MessageBoxA", &MessageBoxHook);
+if (lpOrgFunction == nullptr)
+	return -1;
+
+MessageBoxTest = (MessageBoxPtr)lpOrgFunction;
+
+MessageBoxA(nullptr, "This will never be displayed !", "test", 0);
+
+//Unhook the MessageBoxA function
+IATHook("MessageBoxA", lpOrgFunction);
+
+MessageBoxA(nullptr, "This function have been unhooked !", "test", 0);
+```
+
