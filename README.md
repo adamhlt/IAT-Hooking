@@ -34,10 +34,10 @@ MessageBoxPtr MessageBoxTest;
 //MessageBoxA function hook.
 int WINAPI MessageBoxHook(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType)
 {
-	printf("MessageBoxA have been called !\n");
+  printf("MessageBoxA have been called !\n");
 
   //Call the orginal MessageBoxA function
-	return MessageBoxTest(nullptr, "This function have been hooked !", "test", 0);
+  return MessageBoxTest(nullptr, "This function have been hooked !", "test", 0);
 }
 ```
 
