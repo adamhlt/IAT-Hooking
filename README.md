@@ -25,7 +25,7 @@ Build for x86 / x64 (Debug and Realese).
 
 #### MessageBoxA Hook
 
-New MessageBoxA function.
+New MessageBoxA function
 
 ```cpp
 using MessageBoxPtr = int(WINAPI*)(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType);
@@ -41,7 +41,7 @@ int WINAPI MessageBoxHook(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType
 }
 ```
 
-Hook MessageBoxA.
+Hook MessageBoxA
 
 ```cpp
 //Hook the MessageBoxA function
