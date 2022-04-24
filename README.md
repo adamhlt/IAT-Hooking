@@ -25,8 +25,6 @@ Build for x86 / x64 (Debug and Realese).
 
 #### MessageBoxA Hook
 
-Hook MessageBoxA
-
 ```cpp
 using MessageBoxPtr = int(WINAPI*)(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType);
 MessageBoxPtr MessageBoxTest;
@@ -42,7 +40,7 @@ int WINAPI MessageBoxHook(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType
 int main()
 {
 	//Hook the MessageBoxA function
-	const LPVOID lpOrgFunction = IAT::Hook("MessageBoxA", &MessageBoxHook);
+	const LPVOID lpOrgFunction = IAT::Hook("user32.dll", "MessageBoxA", &MessageBoxHook);
 	if (lpOrgFunction == nullptr)
 		return -1;
 
@@ -51,7 +49,7 @@ int main()
 	MessageBoxA(nullptr, "This will never be displayed !", "test", 0);
 
 	//Unhook the MessageBoxA function
-	IAT::Hook("MessageBoxA", lpOrgFunction);
+	IAT::Hook("user32.dll", "MessageBoxA", lpOrgFunction);
 
 	MessageBoxA(nullptr, "This function have been unhooked !", "test", 0);
 
@@ -59,3 +57,4 @@ int main()
 }
 ```
 
+https://user-images.githubusercontent.com/48086737/164978507-009e19fa-ecb8-4b09-a39b-0ba1bafddfc7.mp4
