@@ -25,7 +25,7 @@ Build for x86 / x64 (Debug and Realese).
 
 #### MessageBoxA Hook
 
-New MessageBoxA function
+Hook MessageBoxA
 
 ```cpp
 using MessageBoxPtr = int(WINAPI*)(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType);
@@ -34,28 +34,28 @@ MessageBoxPtr MessageBoxTest;
 //MessageBoxA function hook.
 int WINAPI MessageBoxHook(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType)
 {
-  printf("MessageBoxA have been called !\n");
+	printf("MessageBoxA have been called !\n");
 
-  //Call the orginal MessageBoxA function
-  return MessageBoxTest(nullptr, "This function have been hooked !", "test", 0);
+	return MessageBoxTest(nullptr, "This function have been hooked !", "test", 0);
 }
-```
 
-Hook MessageBoxA
+int main()
+{
+	//Hook the MessageBoxA function
+	const LPVOID lpOrgFunction = IAT::Hook("MessageBoxA", &MessageBoxHook);
+	if (lpOrgFunction == nullptr)
+		return -1;
 
-```cpp
-//Hook the MessageBoxA function
-const LPVOID lpOrgFunction = IATHook("MessageBoxA", &MessageBoxHook);
-if (lpOrgFunction == nullptr)
-	return -1;
+	MessageBoxTest = (MessageBoxPtr)lpOrgFunction;
 
-MessageBoxTest = (MessageBoxPtr)lpOrgFunction;
+	MessageBoxA(nullptr, "This will never be displayed !", "test", 0);
 
-MessageBoxA(nullptr, "This will never be displayed !", "test", 0);
+	//Unhook the MessageBoxA function
+	IAT::Hook("MessageBoxA", lpOrgFunction);
 
-//Unhook the MessageBoxA function
-IATHook("MessageBoxA", lpOrgFunction);
+	MessageBoxA(nullptr, "This function have been unhooked !", "test", 0);
 
-MessageBoxA(nullptr, "This function have been unhooked !", "test", 0);
+	return 0;
+}
 ```
 

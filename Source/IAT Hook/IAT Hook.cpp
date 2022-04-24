@@ -1,25 +1,58 @@
-#include <Windows.h>
-#include <cstdio>
+#include "IAT Hook.h"
 
-using MessageBoxPtr = int(WINAPI*)(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType);
-MessageBoxPtr MessageBoxTest;
+#include <TlHelp32.h>
+#include <Psapi.h>
+#include <strsafe.h>
+#include <Shlwapi.h>
 
-//MessageBoxA function hook.
-int WINAPI MessageBoxHook(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType)
+/**
+ * Function who retrieve the base address of the main module of the current process.
+ * \return : the base address if it's successfull else nullptr
+ */
+LPVOID IAT::GetCurrentProcessModule()
 {
-	printf("MessageBoxA have been called !\n");
+	char lpCurrentModuleName[MAX_PATH];
 
-	return MessageBoxTest(nullptr, "This function have been hooked !", "test", 0);
+	char lpImageName[MAX_PATH];
+
+	GetProcessImageFileNameA(GetCurrentProcess(), lpImageName, MAX_PATH);
+
+	MODULEENTRY32 ModuleList{};
+	ModuleList.dwSize = sizeof(ModuleList);
+
+	const HANDLE hProcList = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, 0);
+	if (hProcList == INVALID_HANDLE_VALUE)
+		return nullptr;
+
+	if (!Module32First(hProcList, &ModuleList))
+		return nullptr;
+
+	wcstombs_s(nullptr, lpCurrentModuleName, ModuleList.szModule, MAX_PATH);
+	lpCurrentModuleName[MAX_PATH - 1] = '\0';
+
+	if (StrStrA(lpImageName, lpCurrentModuleName) != nullptr)
+		return ModuleList.hModule;
+
+	while (Module32Next(hProcList, &ModuleList))
+	{
+		wcstombs_s(nullptr, lpCurrentModuleName, ModuleList.szModule, MAX_PATH);
+		lpCurrentModuleName[MAX_PATH - 1] = '\0';
+
+		if (StrStrA(lpImageName, lpCurrentModuleName) != nullptr)
+			return ModuleList.hModule;
+	}
+
+	return nullptr;
 }
 
 /**
- * Function to hook functions in the IAT. 
+ * Function to hook functions in the IAT of a specified module. 
  * \param lpFunctionName : name of the function you want to hook.
  * \param lpFunction : pointer of the new function.
  * \param lpModuleName : name of the module.
  * \return : the pointer of the original function or nullptr if it failed.
  */
-LPVOID IATHook(LPCSTR lpFunctionName, const LPVOID lpFunction, LPCSTR lpModuleName = nullptr)
+LPVOID IAT::Hook(LPCSTR lpFunctionName, const LPVOID lpFunction, LPCSTR lpModuleName)
 {
 	const HANDLE hModule = GetModuleHandleA(lpModuleName);
 	const auto lpImageDOSHeader = (PIMAGE_DOS_HEADER)(hModule);
@@ -71,21 +104,60 @@ LPVOID IATHook(LPCSTR lpFunctionName, const LPVOID lpFunction, LPCSTR lpModuleNa
 	return nullptr;
 }
 
-int main()
+/**
+ * Function to hook functions in the IAT of a the main module of the process.
+ * \param lpFunctionName : name of the function you want to hook.
+ * \param lpFunction : pointer of the new function.
+ * \return : the pointer of the original function or nullptr if it failed.
+ */
+LPVOID IAT::Hook(LPCSTR lpFunctionName, const LPVOID lpFunction)
 {
-	//Hook the MessageBoxA function
-	const LPVOID lpOrgFunction = IATHook("MessageBoxA", &MessageBoxHook);
-	if (lpOrgFunction == nullptr)
-		return -1;
+	const LPVOID hModule = GetCurrentProcessModule();
+	const auto lpImageDOSHeader = (PIMAGE_DOS_HEADER)(hModule);
+	if (lpImageDOSHeader == nullptr)
+		return nullptr;
 
-	MessageBoxTest = (MessageBoxPtr)lpOrgFunction;
+	const auto lpImageNtHeader = (PIMAGE_NT_HEADERS)((DWORD_PTR)lpImageDOSHeader + lpImageDOSHeader->e_lfanew);
 
-	MessageBoxA(nullptr, "This will never be displayed !", "test", 0);
+	const IMAGE_DATA_DIRECTORY ImportDataDirectory = lpImageNtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+	auto lpImageImportDescriptor = (PIMAGE_IMPORT_DESCRIPTOR)((DWORD_PTR)hModule + ImportDataDirectory.VirtualAddress);
 
-	//Unhook the MessageBoxA function
-	IATHook("MessageBoxA", lpOrgFunction);
+	while (lpImageImportDescriptor->Characteristics != 0)
+	{
+		auto lpImageOrgThunkData = (PIMAGE_THUNK_DATA)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->OriginalFirstThunk);
+		auto lpImageThunkData = (PIMAGE_THUNK_DATA)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->FirstThunk);
 
-	MessageBoxA(nullptr, "This function have been unhooked !", "test", 0);
+		while (lpImageOrgThunkData->u1.AddressOfData != 0)
+		{
+			const auto lpImportData = (PIMAGE_IMPORT_BY_NAME)((DWORD_PTR)lpImageDOSHeader + lpImageOrgThunkData->u1.AddressOfData);
 
-	return 0;
+			if (strcmp(lpFunctionName, lpImportData->Name) == 0)
+			{
+				DWORD dwJunk = 0;
+				MEMORY_BASIC_INFORMATION mbi;
+
+				VirtualQuery(lpImageThunkData, &mbi, sizeof(MEMORY_BASIC_INFORMATION));
+				if (!VirtualProtect(mbi.BaseAddress, mbi.RegionSize, PAGE_READWRITE, &mbi.Protect))
+					return nullptr;
+
+				const auto lpOrgFunction = (LPVOID)lpImageThunkData->u1.Function;
+
+				#if defined _M_IX86
+					lpImageThunkData->u1.Function = (DWORD_PTR)lpFunction;
+				#elif defined _M_X64
+					lpImageThunkData->u1.Function = (DWORD_PTR)lpFunction;
+				#endif
+
+				if (VirtualProtect(mbi.BaseAddress, mbi.RegionSize, mbi.Protect, &dwJunk))
+					return lpOrgFunction;
+			}
+
+			lpImageThunkData++;
+			lpImageOrgThunkData++;
+		}
+
+		lpImageImportDescriptor++;
+	}
+
+	return nullptr;
 }
