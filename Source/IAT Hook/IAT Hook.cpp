@@ -30,7 +30,7 @@ LPVOID IAT::GetCurrentProcessModule()
 	wcstombs_s(nullptr, lpCurrentModuleName, ModuleList.szModule, MAX_PATH);
 	lpCurrentModuleName[MAX_PATH - 1] = '\0';
 
-	if (StrStrA(lpImageName, lpCurrentModuleName) != nullptr)
+	if (StrStrIA(lpImageName, lpCurrentModuleName) != nullptr)
 		return ModuleList.hModule;
 
 	while (Module32Next(hProcList, &ModuleList))
@@ -38,7 +38,7 @@ LPVOID IAT::GetCurrentProcessModule()
 		wcstombs_s(nullptr, lpCurrentModuleName, ModuleList.szModule, MAX_PATH);
 		lpCurrentModuleName[MAX_PATH - 1] = '\0';
 
-		if (StrStrA(lpImageName, lpCurrentModuleName) != nullptr)
+		if (StrStrIA(lpImageName, lpCurrentModuleName) != nullptr)
 			return ModuleList.hModule;
 	}
 
@@ -46,15 +46,16 @@ LPVOID IAT::GetCurrentProcessModule()
 }
 
 /**
- * Function to hook functions in the IAT of a specified module. 
+ * Function to hook functions in the IAT of a specified module.
+ * \param lpModuleName : name of the module wich contains the function you want to hook.
  * \param lpFunctionName : name of the function you want to hook.
  * \param lpFunction : pointer of the new function.
- * \param lpModuleName : name of the module.
+ * \param lpTargetModuleName : name of the module you want to target.
  * \return : the pointer of the original function or nullptr if it failed.
  */
-LPVOID IAT::Hook(LPCSTR lpFunctionName, const LPVOID lpFunction, LPCSTR lpModuleName)
+LPVOID IAT::Hook(LPCSTR lpModuleName, LPCSTR lpFunctionName, const LPVOID lpFunction, LPCSTR lpTargetModuleName)
 {
-	const HANDLE hModule = GetModuleHandleA(lpModuleName);
+	const HANDLE hModule = GetModuleHandleA(lpTargetModuleName);
 	const auto lpImageDOSHeader = (PIMAGE_DOS_HEADER)(hModule);
 	if (lpImageDOSHeader == nullptr)
 		return nullptr;
@@ -66,6 +67,13 @@ LPVOID IAT::Hook(LPCSTR lpFunctionName, const LPVOID lpFunction, LPCSTR lpModule
 
 	while (lpImageImportDescriptor->Characteristics != 0)
 	{
+		const auto lpCurrentModuleName = (LPSTR)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->Name);
+		if (_stricmp(lpCurrentModuleName, lpModuleName) != 0)
+		{
+			lpImageImportDescriptor++;
+			continue;
+		}
+
 		auto lpImageOrgThunkData = (PIMAGE_THUNK_DATA)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->OriginalFirstThunk);
 		auto lpImageThunkData = (PIMAGE_THUNK_DATA)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->FirstThunk);
 
@@ -106,11 +114,12 @@ LPVOID IAT::Hook(LPCSTR lpFunctionName, const LPVOID lpFunction, LPCSTR lpModule
 
 /**
  * Function to hook functions in the IAT of a the main module of the process.
+ * \param lpModuleName : name of the module wich contains the function.
  * \param lpFunctionName : name of the function you want to hook.
  * \param lpFunction : pointer of the new function.
  * \return : the pointer of the original function or nullptr if it failed.
  */
-LPVOID IAT::Hook(LPCSTR lpFunctionName, const LPVOID lpFunction)
+LPVOID IAT::Hook(LPCSTR lpModuleName, LPCSTR lpFunctionName, const LPVOID lpFunction)
 {
 	const LPVOID hModule = GetCurrentProcessModule();
 	const auto lpImageDOSHeader = (PIMAGE_DOS_HEADER)(hModule);
@@ -124,6 +133,13 @@ LPVOID IAT::Hook(LPCSTR lpFunctionName, const LPVOID lpFunction)
 
 	while (lpImageImportDescriptor->Characteristics != 0)
 	{
+		const auto lpCurrentModuleName = (LPSTR)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->Name);
+		if (_stricmp(lpCurrentModuleName, lpModuleName) != 0)
+		{
+			lpImageImportDescriptor++;
+			continue;
+		}
+
 		auto lpImageOrgThunkData = (PIMAGE_THUNK_DATA)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->OriginalFirstThunk);
 		auto lpImageThunkData = (PIMAGE_THUNK_DATA)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->FirstThunk);
 
