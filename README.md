@@ -1,4 +1,4 @@
-![Project Banner](https://github.com/adamhlt/IAT-Hooking/blob/main/Ressources/banner.png)
+![Banner](https://user-images.githubusercontent.com/48086737/170094284-7754fd04-fcb4-439c-b928-0cdc5bbfdd71.png)
 
 # IAT Hooking
 
