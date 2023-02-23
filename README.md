@@ -10,7 +10,8 @@ This project have been created to show how IAT hooking works.
 
 You can easily hook any functions in the IAT, you can also change the module you want to target.
 
-This project can be compiled for x86 and x64 architecture.
+> **Note** <br>
+> This project can be compiled for x86 and x64 architecture.
 
 ## :rocket: Getting Started
 
