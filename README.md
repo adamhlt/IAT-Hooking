@@ -8,7 +8,7 @@
                                                                           
                                                                           
                                      IAT Hooking POC (x86 / x64)
-                                    Hook functions through the IAT.
+                                    Hook functions through the IAT
 ```
 <p align="center">
     <img src="https://img.shields.io/badge/language-C%2B%2B-%23f34b7d.svg?style=for-the-badge&logo=appveyor" alt="C++">
