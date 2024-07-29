@@ -79,6 +79,13 @@ LPVOID IAT::Hook(LPCSTR lpModuleName, LPCSTR lpFunctionName, const LPVOID lpFunc
 
 		while (lpImageOrgThunkData->u1.AddressOfData != 0)
 		{
+			if (lpImageOrgThunkData->u1.Ordinal & IMAGE_ORDINAL_FLAG)
+			{
+				lpImageThunkData++;
+				lpImageOrgThunkData++;
+				continue;
+			}
+
 			const auto lpImportData = (PIMAGE_IMPORT_BY_NAME)((DWORD_PTR)lpImageDOSHeader + lpImageOrgThunkData->u1.AddressOfData);
 
 			if (strcmp(lpFunctionName, lpImportData->Name) == 0)
@@ -145,6 +152,13 @@ LPVOID IAT::Hook(LPCSTR lpModuleName, LPCSTR lpFunctionName, const LPVOID lpFunc
 
 		while (lpImageOrgThunkData->u1.AddressOfData != 0)
 		{
+			if (lpImageOrgThunkData->u1.Ordinal & IMAGE_ORDINAL_FLAG)
+			{
+				lpImageThunkData++;
+				lpImageOrgThunkData++;
+				continue;
+			}
+
 			const auto lpImportData = (PIMAGE_IMPORT_BY_NAME)((DWORD_PTR)lpImageDOSHeader + lpImageOrgThunkData->u1.AddressOfData);
 
 			if (strcmp(lpFunctionName, lpImportData->Name) == 0)
