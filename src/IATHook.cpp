@@ -1,45 +1,74 @@
 #include "IATHook.h"
 
-#include <TlHelp32.h>
-#include <Psapi.h>
-#include <strsafe.h>
-#include <Shlwapi.h>
+#include <cstring>
 
 /**
- * Function who retrieve the base address of the main module of the current process.
- * \return : the base address if it's successfull else nullptr
+ * Function to hook a function in the IAT of a module.
+ * \param hModule : base address of the module whose IAT is patched.
+ * \param lpModuleName : name of the module wich contains the function you want to hook.
+ * \param lpFunctionName : name of the function you want to hook.
+ * \param lpFunction : pointer of the new function.
+ * \return : the pointer of the original function or nullptr if it failed.
  */
-LPVOID IAT::GetCurrentProcessModule()
+LPVOID IAT::PatchImport(HMODULE hModule, LPCSTR lpModuleName, LPCSTR lpFunctionName, LPVOID lpFunction)
 {
-	char lpCurrentModuleName[MAX_PATH];
-
-	char lpImageName[MAX_PATH];
-
-	GetProcessImageFileNameA(GetCurrentProcess(), lpImageName, MAX_PATH);
-
-	MODULEENTRY32 ModuleList{};
-	ModuleList.dwSize = sizeof(ModuleList);
-
-	const HANDLE hProcList = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, 0);
-	if (hProcList == INVALID_HANDLE_VALUE)
+	if (hModule == nullptr || lpModuleName == nullptr || lpFunctionName == nullptr)
 		return nullptr;
 
-	if (!Module32First(hProcList, &ModuleList))
+	const auto lpBase = (DWORD_PTR)hModule;
+
+	const auto lpImageDOSHeader = (PIMAGE_DOS_HEADER)lpBase;
+	if (lpImageDOSHeader->e_magic != IMAGE_DOS_SIGNATURE)
 		return nullptr;
 
-	wcstombs_s(nullptr, lpCurrentModuleName, ModuleList.szModule, MAX_PATH);
-	lpCurrentModuleName[MAX_PATH - 1] = '\0';
+	const auto lpImageNtHeader = (PIMAGE_NT_HEADERS)(lpBase + lpImageDOSHeader->e_lfanew);
+	if (lpImageNtHeader->Signature != IMAGE_NT_SIGNATURE)
+		return nullptr;
 
-	if (StrStrIA(lpImageName, lpCurrentModuleName) != nullptr)
-		return ModuleList.hModule;
+	const IMAGE_DATA_DIRECTORY ImportDataDirectory = lpImageNtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+	if (ImportDataDirectory.VirtualAddress == 0)
+		return nullptr;
 
-	while (Module32Next(hProcList, &ModuleList))
+	auto lpImageImportDescriptor = (PIMAGE_IMPORT_DESCRIPTOR)(lpBase + ImportDataDirectory.VirtualAddress);
+
+	for (; lpImageImportDescriptor->Name != 0; lpImageImportDescriptor++)
 	{
-		wcstombs_s(nullptr, lpCurrentModuleName, ModuleList.szModule, MAX_PATH);
-		lpCurrentModuleName[MAX_PATH - 1] = '\0';
+		const auto lpCurrentModuleName = (LPCSTR)(lpBase + lpImageImportDescriptor->Name);
+		if (_stricmp(lpCurrentModuleName, lpModuleName) != 0)
+			continue;
 
-		if (StrStrIA(lpImageName, lpCurrentModuleName) != nullptr)
-			return ModuleList.hModule;
+		// Bound imports can leave OriginalFirstThunk empty: fall back to FirstThunk.
+		const DWORD dwNameTableRva = lpImageImportDescriptor->OriginalFirstThunk != 0
+			? lpImageImportDescriptor->OriginalFirstThunk
+			: lpImageImportDescriptor->FirstThunk;
+
+		auto lpImageOrgThunkData = (PIMAGE_THUNK_DATA)(lpBase + dwNameTableRva);
+		auto lpImageThunkData = (PIMAGE_THUNK_DATA)(lpBase + lpImageImportDescriptor->FirstThunk);
+
+		for (; lpImageOrgThunkData->u1.AddressOfData != 0; lpImageThunkData++, lpImageOrgThunkData++)
+		{
+			// Skip functions imported by ordinal.
+			if (lpImageOrgThunkData->u1.Ordinal & IMAGE_ORDINAL_FLAG)
+				continue;
+
+			const auto lpImportData = (PIMAGE_IMPORT_BY_NAME)(lpBase + lpImageOrgThunkData->u1.AddressOfData);
+			if (strcmp(lpFunctionName, lpImportData->Name) != 0)
+				continue;
+
+			// Only unprotect the single pointer that is patched.
+			DWORD dwOldProtect = 0;
+			if (!VirtualProtect(&lpImageThunkData->u1.Function, sizeof(LPVOID), PAGE_READWRITE, &dwOldProtect))
+				return nullptr;
+
+			const auto lpOrgFunction = (LPVOID)lpImageThunkData->u1.Function;
+			lpImageThunkData->u1.Function = (ULONG_PTR)lpFunction;
+
+			// The hook is applied at this point: a failed restore must not be reported as a failed hook.
+			DWORD dwJunk = 0;
+			VirtualProtect(&lpImageThunkData->u1.Function, sizeof(LPVOID), dwOldProtect, &dwJunk);
+
+			return lpOrgFunction;
+		}
 	}
 
 	return nullptr;
@@ -53,70 +82,9 @@ LPVOID IAT::GetCurrentProcessModule()
  * \param lpTargetModuleName : name of the module you want to target.
  * \return : the pointer of the original function or nullptr if it failed.
  */
-LPVOID IAT::Hook(LPCSTR lpModuleName, LPCSTR lpFunctionName, const LPVOID lpFunction, LPCSTR lpTargetModuleName)
+LPVOID IAT::Hook(LPCSTR lpModuleName, LPCSTR lpFunctionName, LPVOID lpFunction, LPCSTR lpTargetModuleName)
 {
-	const HANDLE hModule = GetModuleHandleA(lpTargetModuleName);
-	const auto lpImageDOSHeader = (PIMAGE_DOS_HEADER)(hModule);
-	if (lpImageDOSHeader == nullptr)
-		return nullptr;
-
-	const auto lpImageNtHeader = (PIMAGE_NT_HEADERS)((DWORD_PTR)lpImageDOSHeader + lpImageDOSHeader->e_lfanew);
-
-	const IMAGE_DATA_DIRECTORY ImportDataDirectory = lpImageNtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-	auto lpImageImportDescriptor = (PIMAGE_IMPORT_DESCRIPTOR)((DWORD_PTR)hModule + ImportDataDirectory.VirtualAddress);
-
-	while (lpImageImportDescriptor->Characteristics != 0)
-	{
-		const auto lpCurrentModuleName = (LPSTR)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->Name);
-		if (_stricmp(lpCurrentModuleName, lpModuleName) != 0)
-		{
-			lpImageImportDescriptor++;
-			continue;
-		}
-
-		auto lpImageOrgThunkData = (PIMAGE_THUNK_DATA)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->OriginalFirstThunk);
-		auto lpImageThunkData = (PIMAGE_THUNK_DATA)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->FirstThunk);
-
-		while (lpImageOrgThunkData->u1.AddressOfData != 0)
-		{
-			if (lpImageOrgThunkData->u1.Ordinal & IMAGE_ORDINAL_FLAG)
-			{
-				lpImageThunkData++;
-				lpImageOrgThunkData++;
-				continue;
-			}
-
-			const auto lpImportData = (PIMAGE_IMPORT_BY_NAME)((DWORD_PTR)lpImageDOSHeader + lpImageOrgThunkData->u1.AddressOfData);
-
-			if (strcmp(lpFunctionName, lpImportData->Name) == 0)
-			{
-				DWORD dwJunk = 0;
-				MEMORY_BASIC_INFORMATION mbi;
-
-				VirtualQuery(lpImageThunkData, &mbi, sizeof(MEMORY_BASIC_INFORMATION));
-				if (!VirtualProtect(mbi.BaseAddress, mbi.RegionSize, PAGE_READWRITE, &mbi.Protect))
-					return nullptr;
-
-				const auto lpOrgFunction = (LPVOID)lpImageThunkData->u1.Function;
-
-				#if defined _M_IX86
-					lpImageThunkData->u1.Function = (DWORD_PTR)lpFunction;
-				#elif defined _M_X64
-					lpImageThunkData->u1.Function = (DWORD_PTR)lpFunction;
-				#endif
-
-				if (VirtualProtect(mbi.BaseAddress, mbi.RegionSize, mbi.Protect, &dwJunk))
-					return lpOrgFunction;
-			}
-
-			lpImageThunkData++;
-			lpImageOrgThunkData++;
-		}
-
-		lpImageImportDescriptor++;
-	}
-
-	return nullptr;
+	return PatchImport(GetModuleHandleA(lpTargetModuleName), lpModuleName, lpFunctionName, lpFunction);
 }
 
 /**
@@ -126,68 +94,7 @@ LPVOID IAT::Hook(LPCSTR lpModuleName, LPCSTR lpFunctionName, const LPVOID lpFunc
  * \param lpFunction : pointer of the new function.
  * \return : the pointer of the original function or nullptr if it failed.
  */
-LPVOID IAT::Hook(LPCSTR lpModuleName, LPCSTR lpFunctionName, const LPVOID lpFunction)
+LPVOID IAT::Hook(LPCSTR lpModuleName, LPCSTR lpFunctionName, LPVOID lpFunction)
 {
-	const LPVOID hModule = GetCurrentProcessModule();
-	const auto lpImageDOSHeader = (PIMAGE_DOS_HEADER)(hModule);
-	if (lpImageDOSHeader == nullptr)
-		return nullptr;
-
-	const auto lpImageNtHeader = (PIMAGE_NT_HEADERS)((DWORD_PTR)lpImageDOSHeader + lpImageDOSHeader->e_lfanew);
-
-	const IMAGE_DATA_DIRECTORY ImportDataDirectory = lpImageNtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-	auto lpImageImportDescriptor = (PIMAGE_IMPORT_DESCRIPTOR)((DWORD_PTR)hModule + ImportDataDirectory.VirtualAddress);
-
-	while (lpImageImportDescriptor->Characteristics != 0)
-	{
-		const auto lpCurrentModuleName = (LPSTR)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->Name);
-		if (_stricmp(lpCurrentModuleName, lpModuleName) != 0)
-		{
-			lpImageImportDescriptor++;
-			continue;
-		}
-
-		auto lpImageOrgThunkData = (PIMAGE_THUNK_DATA)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->OriginalFirstThunk);
-		auto lpImageThunkData = (PIMAGE_THUNK_DATA)((DWORD_PTR)lpImageDOSHeader + lpImageImportDescriptor->FirstThunk);
-
-		while (lpImageOrgThunkData->u1.AddressOfData != 0)
-		{
-			if (lpImageOrgThunkData->u1.Ordinal & IMAGE_ORDINAL_FLAG)
-			{
-				lpImageThunkData++;
-				lpImageOrgThunkData++;
-				continue;
-			}
-
-			const auto lpImportData = (PIMAGE_IMPORT_BY_NAME)((DWORD_PTR)lpImageDOSHeader + lpImageOrgThunkData->u1.AddressOfData);
-
-			if (strcmp(lpFunctionName, lpImportData->Name) == 0)
-			{
-				DWORD dwJunk = 0;
-				MEMORY_BASIC_INFORMATION mbi;
-
-				VirtualQuery(lpImageThunkData, &mbi, sizeof(MEMORY_BASIC_INFORMATION));
-				if (!VirtualProtect(mbi.BaseAddress, mbi.RegionSize, PAGE_READWRITE, &mbi.Protect))
-					return nullptr;
-
-				const auto lpOrgFunction = (LPVOID)lpImageThunkData->u1.Function;
-
-				#if defined _M_IX86
-					lpImageThunkData->u1.Function = (DWORD_PTR)lpFunction;
-				#elif defined _M_X64
-					lpImageThunkData->u1.Function = (DWORD_PTR)lpFunction;
-				#endif
-
-				if (VirtualProtect(mbi.BaseAddress, mbi.RegionSize, mbi.Protect, &dwJunk))
-					return lpOrgFunction;
-			}
-
-			lpImageThunkData++;
-			lpImageOrgThunkData++;
-		}
-
-		lpImageImportDescriptor++;
-	}
-
-	return nullptr;
+	return PatchImport(GetModuleHandleA(nullptr), lpModuleName, lpFunctionName, lpFunction);
 }
