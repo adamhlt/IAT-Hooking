@@ -4,11 +4,10 @@
 
 **Hook functions through the Import Address Table, in x86 and x64.**
 
-<img src="https://img.shields.io/badge/language-C%2B%2B-%23f34b7d.svg?style=for-the-badge&logo=appveyor" alt="C++">
-<img src="https://img.shields.io/badge/platform-Windows-0078d7.svg?style=for-the-badge&logo=appveyor" alt="Windows">
-<img src="https://img.shields.io/badge/arch-x86-red.svg?style=for-the-badge&logo=appveyor" alt="x86">
-<img src="https://img.shields.io/badge/arch-x64-green.svg?style=for-the-badge&logo=appveyor" alt="x64">
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue.svg?style=for-the-badge" alt="GPLv3"></a>
+![Language](https://img.shields.io/badge/C%2B%2B-16171C?logo=cplusplus)
+![Platform](https://img.shields.io/badge/Windows-16171C)
+![Arch](https://img.shields.io/badge/x86%20%7C%20x64-16171C)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-16171C)](LICENSE)
 
 </div>
 
