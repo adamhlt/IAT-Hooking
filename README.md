@@ -30,8 +30,8 @@ You can easily hook any functions in the IAT, you can also change the module you
 
 ### Visual Studio :
 
-1. Open the solution file (.sln).
-2. Build the project in Release (x86 or x64)
+1. Open `IATHook.sln`.
+2. Build the `MessageBoxHook` project in Release (x86 or x64); it references the `IATHook` static library.
 
 Build for x86 / x64 (Debug and Realese).
 
@@ -72,3 +72,12 @@ int main()
 ```
 
 https://user-images.githubusercontent.com/48086737/164978507-009e19fa-ecb8-4b09-a39b-0ba1bafddfc7.mp4
+
+## :file_folder: Project layout
+
+```
+include/                  public header (IATHook.h)
+src/                      library implementation (IATHook.cpp)
+IATHook/                  static library project
+examples/MessageBoxHook/  demo hooking MessageBoxA
+```
