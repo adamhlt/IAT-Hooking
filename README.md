@@ -84,15 +84,6 @@ IAT::Hook("user32.dll", "MessageBoxA", &MessageBoxHook, "target.dll");
 - **Library:** `MessageBoxHook` references the `IATHook` static library, which is built automatically.
 - **Include path:** to use the library in your own project, add `include/` to the include directories, link `IATHook.lib` and include `IATHook.h`.
 
-## Project layout
-
-```
-include/                  public header (IATHook.h)
-src/                      library implementation (IATHook.cpp)
-IATHook/                  static library project
-examples/MessageBoxHook/  demo hooking MessageBoxA
-```
-
 ## License
 
 This project is licensed under the [GNU GPL v3](LICENSE).
